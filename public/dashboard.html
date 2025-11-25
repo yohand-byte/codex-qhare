@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DP Auto Pack – Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --accent: #19c37d;
+      --text: #e6edf3;
+      --muted: #8b97a3;
+      --border: #1f2530;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 10% 20%, rgba(25,195,125,0.08), transparent 32%), var(--bg);
+      color: var(--text);
+    }
+    h1 { margin: 0 0 8px; font-weight: 600; letter-spacing: -0.02em; }
+    p.lead { margin: 0 0 24px; color: var(--muted); }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+    }
+    label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
+    input, textarea, select, button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+    }
+    button {
+      margin-top: 12px;
+      background: linear-gradient(135deg, #19c37d, #12a366);
+      color: #04150c;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+    button:hover { transform: translateY(-1px); box-shadow: 0 10px 25px rgba(25,195,125,0.35); }
+    pre {
+      background: #0b0f14;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #c8d1dc;
+      font-size: 13px;
+    }
+    .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(25,195,125,0.15);
+      color: var(--text);
+      font-size: 12px;
+      border: 1px solid rgba(25,195,125,0.35);
+      margin: 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DP Auto Pack · Dashboard</h1>
+    <p class="lead">Pilotage rapide du bridge Odoo et de l’API DP. Ports utilisés : 3000 (bridge) et 8000 (FastAPI).</p>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <h2>1) Lister un dossier Odoo</h2>
+      <label for="odooUrl">URL dossier Odoo</label>
+      <input id="odooUrl" placeholder="https://solaire.qualiwatt.com/odoo/documents/XXXX" />
+      <label for="sessionCookie">Session cookie (optionnel)</label>
+      <input id="sessionCookie" placeholder="session_id=..." />
+      <button onclick="listOdoo()">Lister</button>
+      <div class="pill" id="odooStatus">En attente</div>
+      <pre id="odooResult">Résultat JSON…</pre>
+    </section>
+
+    <section class="card">
+      <h2>2) Générer un DP</h2>
+      <div class="row">
+        <div>
+          <label for="prenom">Prénom</label>
+          <input id="prenom" value="Georges" />
+        </div>
+        <div>
+          <label for="nom">Nom</label>
+          <input id="nom" value="Nedjar" />
+        </div>
+      </div>
+      <label for="adresse">Adresse</label>
+      <div class="row">
+        <input id="numero" value="17" placeholder="N°" />
+        <input id="voie" value="Rue Jaumé" placeholder="Voie" />
+      </div>
+      <div class="row">
+        <input id="ville" value="Châteauneuf-les-Martigues" placeholder="Ville" />
+        <input id="cp" value="13220" placeholder="Code postal" />
+      </div>
+      <label for="description">Description installation</label>
+      <textarea id="description" rows="2">Puissance max, surimposition, 500W RECOM, tri, revente totale</textarea>
+      <label for="puissance">Puissance kWc</label>
+      <input id="puissance" value="max" />
+      <label for="lienOdoo">Lien Odoo (optionnel)</label>
+      <input id="lienOdoo" value="https://solaire.qualiwatt.com/odoo/documents/XXXX" />
+      <label for="apiKey">X-API-Key (FastAPI)</label>
+      <input id="apiKey" value="Hashem0409@" />
+      <button onclick="generate()">Lancer /generate</button>
+      <div class="pill" id="genStatus">En attente</div>
+      <pre id="genResult">Réponse API…</pre>
+    </section>
+
+    <section class="card">
+      <h2>3) Snippet Solar API</h2>
+      <p class="lead" style="margin-bottom:12px;">Colle ta clé dans l’environnement (GOOGLE_SOLAR_API_KEY) puis exécute ce curl :</p>
+      <pre>curl -G "https://solar.googleapis.com/v1/dataLayers:get" \
+  --data-urlencode "location.latitude=48.8566" \
+  --data-urlencode "location.longitude=2.3522" \
+  --data-urlencode "radiusMeters=80" \
+  --data-urlencode "view=IMAGERY_AND_ANNUAL_FLUX_LAYERS" \
+  --data-urlencode "pixelSizeMeters=0.25" \
+  --data-urlencode "key=$GOOGLE_SOLAR_API_KEY"</pre>
+    </section>
+
+    <section class="card">
+      <h2>4) Webhook Qhare</h2>
+      <p class="lead" style="margin-bottom:8px;">Configure dans Qhare l’URL suivante (tunnel Cloudflare) :</p>
+      <input id="qhareUrl" value="https://vanilla-birth-uses-bath.trycloudflare.com/webhooks/qhare" />
+      <div class="row">
+        <input id="qhNom" placeholder="Nom" value="Foussier" />
+        <input id="qhPrenom" placeholder="Prénom" value="Bertrand" />
+      </div>
+      <div class="row">
+        <input id="qhNumero" placeholder="N°" value="14" />
+        <input id="qhVoie" placeholder="Rue" value="Rue Emile Nicol" />
+      </div>
+      <div class="row">
+        <input id="qhVille" placeholder="Ville" value="Dozulé" />
+        <input id="qhCp" placeholder="Code postal" value="14430" />
+      </div>
+      <label for="qhDesc">Description</label>
+      <textarea id="qhDesc" rows="2">Panneau photovoltaïque – test webhook local</textarea>
+      <button onclick="sendQhare()">Tester via /webhooks/qhare (local)</button>
+      <div class="pill" id="qhareStatus">En attente</div>
+      <pre id="qhareResult">Réponse webhook…</pre>
+      <p class="lead" style="margin-top:12px;">Rappel Qhare : événements Création/Modification/Suppression “Leads et Clients” → POST JSON vers l’URL ci-dessus. Les URLs trouvées (pdf/png/jpg/webp) sont téléchargées dans `dp_final/DP_<Client>/attachments/`.</p>
+    </section>
+  </div>
+
+  <script>
+    const status = (el, text, ok = false) => {
+      el.textContent = text;
+      el.style.background = ok ? "rgba(25,195,125,0.15)" : "rgba(255,87,87,0.1)";
+      el.style.borderColor = ok ? "rgba(25,195,125,0.35)" : "rgba(255,87,87,0.25)";
+    };
+
+    async function listOdoo() {
+      const url = document.getElementById("odooUrl").value.trim();
+      const sessionCookie = document.getElementById("sessionCookie").value.trim();
+      const statusEl = document.getElementById("odooStatus");
+      const resultEl = document.getElementById("odooResult");
+      status(statusEl, "Requête…", true);
+      try {
+        const res = await fetch("/list_odoo_folder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, sessionCookie: sessionCookie || undefined }),
+        });
+        const data = await res.json();
+        status(statusEl, res.ok ? "OK" : `Erreur ${res.status}`, res.ok);
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        status(statusEl, "Erreur réseau", false);
+        resultEl.textContent = e.message;
+      }
+    }
+
+    async function generate() {
+      const statusEl = document.getElementById("genStatus");
+      const resultEl = document.getElementById("genResult");
+      status(statusEl, "Requête…", true);
+      const payload = {
+        nom_client: document.getElementById("nom").value,
+        prenom_client: document.getElementById("prenom").value,
+        numero_adresse: document.getElementById("numero").value,
+        voie: document.getElementById("voie").value,
+        ville: document.getElementById("ville").value,
+        code_postal: document.getElementById("cp").value,
+        prefixe_cadastre: "",
+        section_cadastre: "",
+        numero_cadastre: "",
+        superficie_cadastre: "",
+        description_installation: document.getElementById("description").value,
+        puissance_kwc: document.getElementById("puissance").value,
+        lien_odoo: document.getElementById("lienOdoo").value || null,
+        date_signature: null,
+      };
+      try {
+        const res = await fetch("http://127.0.0.1:8000/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": document.getElementById("apiKey").value,
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        status(statusEl, res.ok ? "OK" : `Erreur ${res.status}`, res.ok);
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        status(statusEl, "Erreur réseau", false);
+        resultEl.textContent = e.message;
+      }
+    }
+
+    async function sendQhare() {
+      const statusEl = document.getElementById("qhareStatus");
+      const resultEl = document.getElementById("qhareResult");
+      status(statusEl, "Requête…", true);
+      const payload = {
+        first_name: document.getElementById("qhPrenom").value,
+        last_name: document.getElementById("qhNom").value,
+        street_number: document.getElementById("qhNumero").value,
+        street: document.getElementById("qhVoie").value,
+        city: document.getElementById("qhVille").value,
+        zip: document.getElementById("qhCp").value,
+        project_description: document.getElementById("qhDesc").value,
+        power_kwc: "max"
+      };
+      try {
+        const res = await fetch("http://127.0.0.1:8000/webhooks/qhare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        status(statusEl, res.ok ? "OK" : `Erreur ${res.status}`, res.ok);
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        status(statusEl, "Erreur réseau", false);
+        resultEl.textContent = e.message;
+      }
+    }
+  </script>
+</body>
+</html>

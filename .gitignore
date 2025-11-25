@@ -1,0 +1,9 @@
+node_modules/
+dp_final/
+solar_outputs/
+__pycache__/
+*.log
+.DS_Store
+artifacts/
+cache/
+.env
