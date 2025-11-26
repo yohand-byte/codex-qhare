@@ -85,6 +85,29 @@
 
   <div class="grid">
     <section class="card">
+      <h2>0) Flux Qhare → DP</h2>
+      <label for="qhareLeadUrl">Lien lead Qhare</label>
+      <input id="qhareLeadUrl" value="https://qhare.fr/leads/566980/edit" />
+      <div class="row">
+        <input id="qhareLeadId" placeholder="ID lead (optionnel)" />
+        <input id="qhareMaxDocs" type="number" min="1" max="10" value="3" placeholder="Docs max" />
+      </div>
+      <label for="qhareApiKey">X-API-Key (FastAPI pour auto DP)</label>
+      <input id="qhareApiKey" value="Hashem0409@" />
+      <div class="row">
+        <button onclick="loadQhareLead()">Charger lead</button>
+        <button onclick="fillFromQhare()">Remplir formulaire</button>
+        <button onclick="autoGenerateQhare()">Auto /generate (Qhare)</button>
+      </div>
+      <div class="pill" id="qhareLeadStatus">En attente</div>
+      <pre id="qhareLeadResult">Résultat Qhare…</pre>
+      <p class="lead" style="margin-top:12px;">Docs Qhare (miniatures)</p>
+      <div class="doc-grid" id="qhareDocGallery"></div>
+      <p class="lead" style="margin-top:12px;">Docs DP généré</p>
+      <div class="doc-grid" id="qhareGenGallery"></div>
+    </section>
+
+    <section class="card">
       <h2>1) Lister un dossier Odoo</h2>
       <label for="odooUrl">URL dossier Odoo</label>
       <input id="odooUrl" placeholder="https://solaire.qualiwatt.com/odoo/documents/XXXX" />
@@ -130,15 +153,53 @@
     </section>
 
     <section class="card">
-      <h2>3) Snippet Solar API</h2>
-      <p class="lead" style="margin-bottom:12px;">Colle ta clé dans l’environnement (GOOGLE_SOLAR_API_KEY) puis exécute ce curl :</p>
-      <pre>curl -G "https://solar.googleapis.com/v1/dataLayers:get" \
-  --data-urlencode "location.latitude=48.8566" \
-  --data-urlencode "location.longitude=2.3522" \
-  --data-urlencode "radiusMeters=80" \
-  --data-urlencode "view=IMAGERY_AND_ANNUAL_FLUX_LAYERS" \
-  --data-urlencode "pixelSizeMeters=0.25" \
-  --data-urlencode "key=$GOOGLE_SOLAR_API_KEY"</pre>
+      <h2>3) Solar API</h2>
+      <p class="lead" style="margin-bottom:12px;">Pilote les endpoints <code>dataLayers</code>, <code>buildingInsights</code> et <code>geoTiff</code> avec ta clé serveur.</p>
+      <h3 style="margin-top:0;">Data Layers</h3>
+      <div class="row">
+        <input id="solarLat" value="48.8566" placeholder="Latitude" />
+        <input id="solarLon" value="2.3522" placeholder="Longitude" />
+      </div>
+      <div class="row">
+        <input id="solarRadius" value="80" placeholder="Rayon (m)" />
+        <input id="solarPixel" value="0.25" placeholder="Pixel (m)" />
+      </div>
+      <label for="solarView">Vue</label>
+      <input id="solarView" value="IMAGERY_AND_ANNUAL_FLUX_LAYERS" />
+      <button onclick="callSolar()">Tester layers</button>
+      <div class="pill" id="solarStatus">En attente</div>
+      <div class="solar-info" id="solarInfo">
+        <p class="lead" style="font-size:12px;color:var(--muted);">Les informations d’imagerie s’afficheront ici.</p>
+      </div>
+      <pre id="solarResult">Réponse Solar…</pre>
+
+      <h3>Bâtiment (buildingInsights)</h3>
+      <div class="row">
+        <input id="buildingLat" value="48.8566" placeholder="Latitude" />
+        <input id="buildingLon" value="2.3522" placeholder="Longitude" />
+      </div>
+      <div class="row">
+        <select id="buildingQuality">
+          <option value="HIGH" selected>HIGH</option>
+          <option value="MEDIUM">MEDIUM</option>
+          <option value="LOW">LOW</option>
+        </select>
+      </div>
+      <button onclick="callBuilding()">Obtenir building insights</button>
+      <div class="pill" id="buildingStatus">En attente</div>
+      <div class="solar-info" id="buildingInfo">
+        <p class="lead" style="font-size:12px;color:var(--muted);">Résumé bâtiment affiché ici.</p>
+      </div>
+      <pre id="buildingResult">Réponse building…</pre>
+
+      <h3>GeoTIFF (proxy)</h3>
+      <p class="lead" style="margin-bottom:8px;">Colle l’identifiant reçu (DSM/RGB/Mask/Flux) pour obtenir une URL signée.</p>
+      <input id="geotiffId" placeholder="GeoTIFF id=..." />
+      <button onclick="buildGeoTiff()">Générer lien GeoTIFF</button>
+      <div class="pill" id="geotiffStatus">En attente</div>
+      <div class="solar-info" id="geotiffInfo">
+        <p class="lead" style="font-size:12px;color:var(--muted);">Lien généré ici.</p>
+      </div>
     </section>
 
     <section class="card">
@@ -167,11 +228,365 @@
   </div>
 
   <script>
+    let qhareBundle = null;
+    const summarizeDocs = docs => {
+      if (!Array.isArray(docs)) return [];
+      const seen = new Set();
+      const iconFor = name => {
+        if (!name) return "📄";
+        const ext = name.split(".").pop()?.toLowerCase();
+        if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) return "🖼️";
+        if (["pdf"].includes(ext)) return "🧾";
+        if (["zip", "rar7z", "rar", "7z"].includes(ext)) return "📦";
+        if (["doc", "docx"].includes(ext)) return "📃";
+        if (["xls", "xlsx", "csv"].includes(ext)) return "📊";
+        return "📄";
+      };
+      const pickName = doc => {
+        if (!doc) return null;
+        if (doc.filename) return doc.filename;
+        if (typeof doc.saved_as === "string") return doc.saved_as.split("/").pop();
+        if (typeof doc.url === "string") return doc.url.split("/").pop();
+        return null;
+      };
+      const list = [];
+      for (const doc of docs) {
+        const name = pickName(doc);
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        list.push(`${iconFor(name)} ${name}`);
+      }
+      return list;
+    };
+
+    const formatQhareBundle = bundle => ({
+      leadId: bundle.leadId,
+      contact: bundle.contact,
+      address: bundle.address,
+      summary: bundle.summary,
+      missing: bundle.missing,
+      documents: summarizeDocs(bundle.documents),
+    });
+
+    const formatGenerateResult = data => ({
+      status: data.status,
+      file: data.file,
+      path: data.path,
+      request_dir: data.request_dir,
+      inline_documents: summarizeDocs(data.inline_documents),
+      attachments: summarizeDocs(data.attachments),
+      qhare: data.qhare
+        ? {
+            leadId: data.qhare.leadId,
+            summary: data.qhare.summary,
+            documents: summarizeDocs(data.qhare.documents),
+          }
+        : undefined,
+    });
+
+    const renderDocGallery = (docs, containerId) => {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = "";
+      if (!Array.isArray(docs) || !docs.length) {
+        container.innerHTML = '<p class="lead" style="font-size:12px;color:var(--muted);">Aucun document disponible.</p>';
+        return;
+      }
+      docs.slice(0, 12).forEach(doc => {
+        const box = document.createElement("div");
+        box.className = "doc-thumb";
+        const img = document.createElement("img");
+        img.alt = doc.filename || "Doc";
+        box.appendChild(img);
+        const caption = document.createElement("div");
+        caption.className = "doc-caption";
+        caption.textContent = doc.filename || doc.label || "Document";
+        box.appendChild(caption);
+        if (doc.url) {
+          const link = document.createElement("a");
+          link.href = doc.url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "Ouvrir";
+          box.appendChild(link);
+        }
+        container.appendChild(box);
+        if (doc.preview || doc.url) {
+          loadDocPreview(img, doc.preview || doc.url, box);
+        } else {
+          box.classList.remove("loading");
+        }
+      });
+    };
+
+    const loadDocPreview = async (imgEl, sourceUrl, box) => {
+      if (!sourceUrl) return;
+      box.classList.add("loading");
+      try {
+        const res = await fetch("/qhare/document_preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: sourceUrl }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        imgEl.src = `data:${data.mime};base64,${data.base64}`;
+      } catch (e) {
+        imgEl.remove();
+        const fallback = document.createElement("div");
+        fallback.className = "doc-caption";
+        fallback.textContent = "Prévisualisation indisponible";
+        box.appendChild(fallback);
+      } finally {
+        box.classList.remove("loading");
+      }
+    };
+
+    const renderSolarInfo = data => {
+      const container = document.getElementById("solarInfo");
+      if (!container) return;
+      if (!data || typeof data !== "object") {
+        container.innerHTML = '<p class="lead" style="font-size:12px;color:var(--muted);">Pas de données Solar.</p>';
+        return;
+      }
+      const fmtDate = obj =>
+        obj && obj.year ? `${String(obj.day || 1).padStart(2, "0")}/${String(obj.month || 1).padStart(2, "0")}/${obj.year}` : "—";
+      container.innerHTML = `
+        <div><strong>Date imagerie</strong>${fmtDate(data.imageryDate)}</div>
+        <div><strong>Date traitement</strong>${fmtDate(data.imageryProcessedDate)}</div>
+        <div><strong>Qualité</strong>${data.imageryQuality || "—"}</div>
+        <div class="solar-links">
+          ${data.rgbUrl ? `<a href="${data.rgbUrl}" target="_blank" rel="noopener noreferrer">RGB GeoTIFF</a>` : ""}
+          ${data.dsmUrl ? `<a href="${data.dsmUrl}" target="_blank" rel="noopener noreferrer">DSM</a>` : ""}
+          ${data.maskUrl ? `<a href="${data.maskUrl}" target="_blank" rel="noopener noreferrer">Mask</a>` : ""}
+          ${data.annualFluxUrl ? `<a href="${data.annualFluxUrl}" target="_blank" rel="noopener noreferrer">Annual Flux</a>` : ""}
+        </div>
+      `;
+    };
+
+    const renderBuildingInfo = data => {
+      const container = document.getElementById("buildingInfo");
+      if (!container) return;
+      if (!data || typeof data !== "object") {
+        container.innerHTML = '<p class="lead" style="font-size:12px;color:var(--muted);">Pas de données.</p>';
+        return;
+      }
+      const info = data.buildingInsights || data;
+      const center = info.center || info.location || {};
+      const solar = info.solarPotential || {};
+      const roofStats = solar.wholeRoofStats || solar.wholeRoofStatistics || {};
+      const summary = [
+        { label: "Nom", value: info.name || "—" },
+        {
+          label: "Centre",
+          value:
+            center.latitude != null && center.longitude != null
+              ? `${Number(center.latitude).toFixed(6)}, ${Number(center.longitude).toFixed(6)}`
+              : "—",
+        },
+        { label: "Surface toit (m²)", value: roofStats.areaMeters2 != null ? roofStats.areaMeters2.toFixed(2) : "—" },
+        { label: "Panneaux max", value: solar.maxArrayPanelsCount ?? solar.maxArrayPanelCount ?? "—" },
+        {
+          label: "Énergie annuelle (kWh)",
+          value:
+            solar.maxArrayAnnualEnergyKwh?.toLocaleString?.("fr-FR") ||
+            solar.annualKwhEstimate?.toLocaleString?.("fr-FR") ||
+            "—",
+        },
+      ];
+      container.innerHTML = summary.map(item => `<div><strong>${item.label}</strong>${item.value}</div>`).join("");
+    };
     const status = (el, text, ok = false) => {
       el.textContent = text;
       el.style.background = ok ? "rgba(25,195,125,0.15)" : "rgba(255,87,87,0.1)";
       el.style.borderColor = ok ? "rgba(25,195,125,0.35)" : "rgba(255,87,87,0.25)";
     };
+
+    async function loadQhareLead() {
+      const statusEl = document.getElementById("qhareLeadStatus");
+      const resultEl = document.getElementById("qhareLeadResult");
+      const leadUrl = document.getElementById("qhareLeadUrl").value.trim();
+      const leadId = document.getElementById("qhareLeadId").value.trim();
+      if (!leadUrl && !leadId) {
+        status(statusEl, "URL ou ID requis", false);
+        resultEl.textContent = "Merci de renseigner l’URL ou l’ID du lead Qhare.";
+        return;
+      }
+      status(statusEl, "Requête Qhare…", true);
+      try {
+        const res = await fetch("/qhare/lead", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            leadUrl: leadUrl || undefined,
+            leadId: leadId || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Erreur Qhare");
+        qhareBundle = data;
+        status(statusEl, "Lead chargé", true);
+        resultEl.textContent = JSON.stringify(formatQhareBundle(data), null, 2);
+        renderDocGallery(data.documents, "qhareDocGallery");
+      } catch (e) {
+        status(statusEl, "Erreur Qhare", false);
+        resultEl.textContent = e.message;
+      }
+    }
+
+    function fillFromQhare() {
+      if (!qhareBundle || !qhareBundle.dpPayload) {
+        alert("Charge d’abord un lead Qhare.");
+        return;
+      }
+      const payload = qhareBundle.dpPayload;
+      document.getElementById("prenom").value = payload.prenom_client || "";
+      document.getElementById("nom").value = payload.nom_client || "";
+      document.getElementById("numero").value = payload.numero_adresse || "";
+      document.getElementById("voie").value = payload.voie || "";
+      document.getElementById("ville").value = payload.ville || "";
+      document.getElementById("cp").value = payload.code_postal || "";
+      document.getElementById("description").value = payload.description_installation || "";
+      document.getElementById("puissance").value = payload.puissance_kwc || "max";
+      document.getElementById("lienOdoo").value = qhareBundle.leadUrl || "";
+      const statusEl = document.getElementById("qhareLeadStatus");
+      status(statusEl, "Formulaire pré-rempli", true);
+    }
+
+    async function autoGenerateQhare() {
+      const statusEl = document.getElementById("qhareLeadStatus");
+      const resultEl = document.getElementById("qhareLeadResult");
+      const leadUrl = document.getElementById("qhareLeadUrl").value.trim();
+      const leadId = document.getElementById("qhareLeadId").value.trim();
+      const apiKey = document.getElementById("qhareApiKey").value.trim() || document.getElementById("apiKey").value.trim();
+      const maxDocuments = parseInt(document.getElementById("qhareMaxDocs").value, 10) || 3;
+      if (!apiKey) {
+        status(statusEl, "API key manquante", false);
+        resultEl.textContent = "Merci de renseigner une clé FastAPI.";
+        return;
+      }
+      if (!leadUrl && !leadId) {
+        status(statusEl, "URL ou ID requis", false);
+        resultEl.textContent = "Merci de renseigner l’URL ou l’ID du lead Qhare.";
+        return;
+      }
+      status(statusEl, "Auto /generate…", true);
+      try {
+        const res = await fetch("/qhare/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            leadUrl: leadUrl || undefined,
+            leadId: leadId || undefined,
+            apiKey,
+            maxDocuments,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || data.detail || "Erreur FastAPI");
+        status(statusEl, "DP généré", true);
+        resultEl.textContent = JSON.stringify(formatGenerateResult(data), null, 2);
+        if (data.qhare?.documents) {
+          renderDocGallery(data.qhare.documents, "qhareGenGallery");
+        }
+      } catch (e) {
+        status(statusEl, "Erreur génération", false);
+        resultEl.textContent = e.message;
+      }
+    }
+
+    async function callSolar() {
+      const statusEl = document.getElementById("solarStatus");
+      const resultEl = document.getElementById("solarResult");
+      const latitude = parseFloat(document.getElementById("solarLat").value);
+      const longitude = parseFloat(document.getElementById("solarLon").value);
+      const radius = parseFloat(document.getElementById("solarRadius").value) || 80;
+      const pixel = parseFloat(document.getElementById("solarPixel").value) || 0.25;
+      const view = document.getElementById("solarView").value.trim() || "IMAGERY_AND_ANNUAL_FLUX_LAYERS";
+      if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+        status(statusEl, "Latitude/Longitude invalides", false);
+        resultEl.textContent = "Merci de renseigner deux nombres valides.";
+        return;
+      }
+      status(statusEl, "Requête Solar…", true);
+      try {
+        const res = await fetch("/solar/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            latitude,
+            longitude,
+            radiusMeters: radius,
+            pixelSizeMeters: pixel,
+            view,
+          }),
+        });
+        const data = await res.json();
+        status(statusEl, res.ok ? "OK" : `Erreur ${res.status}`, res.ok);
+        resultEl.textContent = JSON.stringify(data, null, 2);
+        if (res.ok) renderSolarInfo(data);
+      } catch (e) {
+        status(statusEl, "Erreur Solar", false);
+        resultEl.textContent = e.message;
+      }
+    }
+
+    async function callBuilding() {
+      const statusEl = document.getElementById("buildingStatus");
+      const resultEl = document.getElementById("buildingResult");
+      const latitude = parseFloat(document.getElementById("buildingLat").value);
+      const longitude = parseFloat(document.getElementById("buildingLon").value);
+      const requiredQuality = document.getElementById("buildingQuality").value;
+      if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+        status(statusEl, "Latitude/Longitude invalides", false);
+        resultEl.textContent = "Merci de renseigner deux nombres valides.";
+        return;
+      }
+      status(statusEl, "Requête building…", true);
+      try {
+        const res = await fetch("/solar/building_insights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ latitude, longitude, requiredQuality }),
+        });
+        const data = await res.json();
+        status(statusEl, res.ok ? "OK" : `Erreur ${res.status}`, res.ok);
+        resultEl.textContent = JSON.stringify(data, null, 2);
+        if (res.ok) renderBuildingInfo(data);
+      } catch (e) {
+        status(statusEl, "Erreur building", false);
+        resultEl.textContent = e.message;
+      }
+    }
+
+    async function buildGeoTiff() {
+      const statusEl = document.getElementById("geotiffStatus");
+      const infoEl = document.getElementById("geotiffInfo");
+      const id = document.getElementById("geotiffId").value.trim();
+      if (!id) {
+        status(statusEl, "ID requis", false);
+        infoEl.innerHTML = '<p class="lead" style="font-size:12px;color:var(--muted);">Renseigne un identifiant.</p>';
+        return;
+      }
+      status(statusEl, "Génération…", true);
+      try {
+        const res = await fetch("/solar/geotiff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const data = await res.json();
+        status(statusEl, res.ok ? "OK" : `Erreur ${res.status}`, res.ok);
+        if (!res.ok) {
+          infoEl.innerHTML = `<p class="lead" style="font-size:12px;color:var(--muted);">${data.error || "Erreur"}</p>`;
+          return;
+        }
+        infoEl.innerHTML = `<a href="${data.url}" target="_blank" rel="noopener noreferrer">${data.url}</a>`;
+      } catch (e) {
+        status(statusEl, "Erreur GeoTIFF", false);
+        infoEl.innerHTML = `<p class="lead" style="font-size:12px;color:var(--muted);">${e.message}</p>`;
+      }
+    }
 
     async function listOdoo() {
       const url = document.getElementById("odooUrl").value.trim();
@@ -263,3 +678,80 @@
   </script>
 </body>
 </html>
+    .doc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .doc-thumb {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #0b0f14;
+      min-height: 140px;
+    }
+    .doc-thumb img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      display: block;
+      background: #050708;
+    }
+    .doc-caption {
+      font-size: 11px;
+      padding: 6px;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .doc-thumb a {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      font-size: 12px;
+      background: rgba(4, 21, 12, 0.8);
+      color: var(--accent);
+      padding: 2px 6px;
+      border-radius: 999px;
+      text-decoration: none;
+    }
+    .doc-thumb.loading::after {
+      content: "Chargement…";
+      position: absolute;
+      top: 45%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .solar-info {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #0b1018;
+      margin-top: 10px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .solar-info strong {
+      display: inline-block;
+      width: 140px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .solar-links {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .solar-links a {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      text-decoration: none;
+      font-size: 12px;
+      color: var(--accent);
+      background: rgba(25,195,125,0.08);
+    }

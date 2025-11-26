@@ -2,9 +2,16 @@
   "name": "dp-auto-pack",
   "type": "module",
   "dependencies": {
+    "axios": "^1.13.2",
+    "axios-cookiejar-support": "^6.0.5",
+    "cheerio": "^1.0.0-rc.12",
     "express": "^4.19.2",
     "node-fetch": "^3.3.2",
-    "cheerio": "^1.0.0-rc.12",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "playwright": "^1.57.0",
+    "tough-cookie": "^6.0.0"
+  },
+  "scripts": {
+    "xpo": "node xpo.js"
   }
 }

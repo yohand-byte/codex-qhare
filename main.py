@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Union
 import os
 import subprocess
 import json
@@ -44,6 +44,17 @@ class DPRequest(BaseModel):
     lien_odoo: Optional[str] = None
     date_signature: Optional[str] = None
     session_cookie: Optional[str] = None
+
+class InlineDocument(BaseModel):
+    filename: Optional[str] = None
+    content: Optional[str] = None
+    base64: Optional[str] = None
+    data: Optional[str] = None
+
+class GenerateEnvelope(BaseModel):
+    payload: DPRequest
+    extra_urls: Optional[List[str]] = None
+    inline_documents: Optional[List[InlineDocument]] = None
 
 def download_urls(urls, dest_dir: Path):
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -164,10 +175,24 @@ def process_dp_request(payload: DPRequest, extra_urls=None, inline_documents=Non
 
 
 @app.post("/generate")
-async def generate_dp(payload: DPRequest, x_api_key: str = Header(None)):
+async def generate_dp(payload: Union[DPRequest, GenerateEnvelope], x_api_key: str = Header(None)):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    return process_dp_request(payload)
+
+    if isinstance(payload, DPRequest):
+        return process_dp_request(payload)
+
+    inline_docs = None
+    if payload.inline_documents:
+        inline_docs = [
+            doc.model_dump(exclude_none=True)
+            for doc in payload.inline_documents
+        ]
+    return process_dp_request(
+        payload.payload,
+        extra_urls=payload.extra_urls,
+        inline_documents=inline_docs,
+    )
 
 
 # --- Webhook Qhare ---
